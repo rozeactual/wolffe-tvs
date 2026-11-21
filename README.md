@@ -606,3 +606,12 @@ cd ~/Downloads/wolffe-tv-v4-alpha3.7-source
 ## Alpha 4.0A self-hosted server foundation
 
 Opt-in LAN HTTP server, off by default, on port **8765**. The host-only settings show listener status, interfaces, IPv4/IPv6 addresses, Wolffe Host ID, URL, access code, port, and a future authenticated-client limit. `GET /` and `GET /api/status` are the only routes. No TV control or administration endpoint exists yet. The client limit defaults to **1**, is stored now, and will be enforced in Alpha 4.0C. Plain HTTP is for a trusted LAN only; do not expose it to the Internet.
+
+---
+## Alpha 4.0B read-only web dashboard
+
+Alpha 4.0B adds a responsive, read-only household dashboard at the server root. The browser can view saved TV names, the selected TV's last-known online/offline state, model information, and visible configured input tiles. `GET /api/devices` supplies the dashboard snapshot.
+
+The web snapshot is captured when the server starts. Stop and restart the server after changing host-side devices or inputs to refresh the browser data during this phase.
+
+No browser route can add, edit, delete, discover, customize, switch inputs, or send remote commands. Authentication and enforceable client limits remain reserved for Alpha 4.0C.

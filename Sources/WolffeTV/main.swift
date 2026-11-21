@@ -100,7 +100,20 @@ final class TVModel: ObservableObject {
     func loadWebServerPreferences(){let p=defaults.integer(forKey:webPortKey);webServerPort=p==0 ? 8765:p;webHostID=defaults.string(forKey:webHostIDKey) ?? "WTV-\(UUID().uuidString.prefix(8).uppercased())";webAccessCode=defaults.string(forKey:webAccessCodeKey) ?? String(format:"%06d",Int.random(in:0...999999));let m=defaults.integer(forKey:webMaxClientsKey);webMaxClients=m==0 ? 1:max(1,m);defaults.set(webHostID,forKey:webHostIDKey);defaults.set(webAccessCode,forKey:webAccessCodeKey);saveWebServerPreferences();refreshHostNetworkInfo()}
     func refreshHostNetworkInfo(){hostNetworkInfo=HostNetworkInfo.current()}
     func saveWebServerPreferences(){webServerPort=min(65535,max(1024,webServerPort));webMaxClients=max(1,webMaxClients);defaults.set(webServerPort,forKey:webPortKey);defaults.set(webMaxClients,forKey:webMaxClientsKey)}
-    func startWebServer(){guard !webServerRunning,let p=UInt16(exactly:webServerPort)else{return};do{let w=WolffeWebServer(port:p);w.onState={[weak self]a,b in Task{@MainActor in self?.webServerStatus=a;self?.webServerRunning=b}};try w.start();webServer=w;webServerStatus="Starting…"}catch{webServerStatus="Failed: \(error.localizedDescription)"}}
+    func startWebServer(){guard !webServerRunning,let p=UInt16(exactly:webServerPort)else{return};do{let w=WolffeWebServer(port:p,snapshot:makeWebDashboardSnapshot());w.onState={[weak self]a,b in Task{@MainActor in self?.webServerStatus=a;self?.webServerRunning=b}};try w.start();webServer=w;webServerStatus="Starting…"}catch{webServerStatus="Failed: \(error.localizedDescription)"}}
+    func makeWebDashboardSnapshot() -> WebDashboardSnapshot {
+        let selectedID = selectedDevice?.id
+        let webDevices = devices.map { device in
+            let status: String
+            if device.id == selectedID { status = online ? "online" : "offline" }
+            else { status = "unknown" }
+            let visibleInputs = (device.inputs ?? []).filter { $0.isVisible }.sorted { $0.sortOrder < $1.sortOrder }.map {
+                WebInputSnapshot(id: $0.ecpID, name: $0.displayName, subtitle: $0.subtitle, icon: $0.resolvedIcon, accent: $0.accentName ?? "Purple")
+            }
+            return WebDeviceSnapshot(id: device.id.uuidString, name: device.customName, status: status, modelNumber: device.modelNumber, inputs: visibleInputs)
+        }
+        return WebDashboardSnapshot(generatedAt: ISO8601DateFormatter().string(from: Date()), devices: webDevices)
+    }
     func stopWebServer(){webServer?.stop();webServer=nil;webServerRunning=false;webServerStatus="Stopped"}
     func regenerateAccessCode(){webAccessCode=String(format:"%06d",Int.random(in:0...999999));defaults.set(webAccessCode,forKey:webAccessCodeKey)}
     var preferredWebURL:String?{hostNetworkInfo.ipv4.first.map{"http://\($0):\(webServerPort)"}}
@@ -353,7 +366,7 @@ struct ContentView: View {
     private var header: some View {
         HStack {
             VStack(alignment: .leading, spacing: 4) {
-                Text("LOCAL CONTROL · v4 ALPHA 4.0A.2").font(.caption).tracking(3).foregroundStyle(.purple)
+                Text("LOCAL CONTROL · v4 ALPHA 4.0B").font(.caption).tracking(3).foregroundStyle(.purple)
                 if model.devices.count > 1 {
                     Picker("TV", selection: Binding(
                         get: { model.selectedDevice?.id ?? model.devices.first?.id ?? UUID() },

@@ -2,10 +2,10 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 APP_NAME="Wolffe TV.app"; EXECUTABLE_NAME="WolffeTV"; BUILD_ROOT="$PWD/build"
-APP_BUNDLE="$BUILD_ROOT/$APP_NAME"; DMG_STAGING="$BUILD_ROOT/dmg"; DMG_PATH="$BUILD_ROOT/Wolffe-TV-v4-alpha3.4.2-universal.dmg"
+APP_BUNDLE="$BUILD_ROOT/$APP_NAME"; DMG_STAGING="$BUILD_ROOT/dmg"; DMG_PATH="$BUILD_ROOT/Wolffe-TV-v4-alpha3.5-universal.dmg"
 fail(){ printf '\nERROR: %s\n' "$1" >&2; exit 1; }
 
-printf 'Wolffe TV v4 Alpha 3.4.2 build preflight\n--------------------------------------\n'
+printf 'Wolffe TV v4 Alpha 3.5 build preflight\n--------------------------------------\n'
 DEV="$(xcode-select -p 2>/dev/null || true)"
 [[ "$DEV" == *"Xcode.app/Contents/Developer" ]] || fail "Full Xcode is not selected. Run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer"
 for cmd in swift hdiutil codesign sips iconutil lipo; do command -v "$cmd" >/dev/null || fail "$cmd was not found."; done
@@ -37,5 +37,5 @@ iconutil -c icns "$ICONSET" -o "$APP_BUNDLE/Contents/Resources/WolffeTV.icns"
 codesign --force --deep --sign - "$APP_BUNDLE"
 codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE"
 mkdir -p "$DMG_STAGING"; cp -R "$APP_BUNDLE" "$DMG_STAGING/"; ln -s /Applications "$DMG_STAGING/Applications"
-hdiutil create -volname "Wolffe TV v4 Alpha 3.4.2" -srcfolder "$DMG_STAGING" -ov -format UDZO "$DMG_PATH"
+hdiutil create -volname "Wolffe TV v4 Alpha 3.5" -srcfolder "$DMG_STAGING" -ov -format UDZO "$DMG_PATH"
 printf '\nSUCCESS\nArchitectures: %s\nApp: %s\nIcon: included and verified\nDMG: %s\n' "$ARCHS" "$APP_BUNDLE" "$DMG_PATH"

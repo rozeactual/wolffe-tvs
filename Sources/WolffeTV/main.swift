@@ -59,6 +59,7 @@ final class TVModel: ObservableObject {
     @Published var showingDiscovery = false
     @Published var isDiscovering = false
     @Published var discoveredRokus: [DiscoveredRoku] = []
+    @Published var discoveryDiagnostics = "Discovery has not run yet."
 
     private let stateKey = "wolffeTVState.v1"
     private let defaults = UserDefaults.standard
@@ -158,7 +159,7 @@ final class TVModel: ObservableObject {
     }
 
     func isKnownHost(_ host:String)->Bool { state.devices.contains{$0.host==host} }
-    func discoverRokus() async { isDiscovering=true;message="";discoveredRokus=await RokuDiscovery.discover();isDiscovering=false;message=discoveredRokus.isEmpty ? "No Roku TVs discovered." : "✓ Found \(discoveredRokus.count) Roku TV(s)" }
+    func discoverRokus() async { isDiscovering = true; message = ""; let result = await RokuDiscovery.discover(); discoveredRokus = result.devices; discoveryDiagnostics = result.diagnostics.summary; isDiscovering = false; message = discoveredRokus.isEmpty ? "No Roku TVs discovered." : "✓ Found \(discoveredRokus.count) Roku TV(s)" }
     func addDiscovered(_ r:DiscoveredRoku) async { guard !isKnownHost(r.host) else{message="That TV is already added.";return};let d=RokuDevice(customName:r.name,host:r.host,discoveredName:r.name,modelNumber:r.modelNumber,softwareVersion:r.softwareVersion);state.devices.append(d);state.selectedDeviceID=d.id;persist();await checkStatus();await refreshInputs();message="✓ Added \(r.name)" }
     func replaceInputs(_ v:[RokuInput]) { guard let id=selectedDevice?.id,let i=state.devices.firstIndex(where:{$0.id==id}) else{return};state.devices[i].inputs=v;persist() }
     func refreshInputs() async { guard let d=selectedDevice,let u=URL(string:"http://\(d.host):8060/query/apps") else{return};do{var r=URLRequest(url:u);r.timeoutInterval=5;let(data,res)=try await URLSession.shared.data(for:r);guard(res as? HTTPURLResponse)?.statusCode==200 else{throw URLError(.badServerResponse)};let fresh=InputParser.parse(data);guard !fresh.isEmpty else{message="No physical inputs detected.";return};let old=Dictionary(uniqueKeysWithValues:selectedInputs.map{($0.ecpID,$0)});let merged=fresh.map{f->RokuInput in var x=f;if let o=old[f.ecpID]{x.customName=o.customName;x.isVisible=o.isVisible;x.sortOrder=o.sortOrder;x.iconName=o.iconName;x.accentName=o.accentName};return x};replaceInputs(merged);message="✓ Detected \(merged.count) inputs for \(d.customName)"}catch{message="Could not refresh inputs from \(d.customName)."} }
@@ -303,7 +304,7 @@ struct ContentView: View {
     private var header: some View {
         HStack {
             VStack(alignment: .leading, spacing: 4) {
-                Text("LOCAL CONTROL · v4 ALPHA 3.5").font(.caption).tracking(3).foregroundStyle(.purple)
+                Text("LOCAL CONTROL · v4 ALPHA 3.6.1").font(.caption).tracking(3).foregroundStyle(.purple)
                 if model.devices.count > 1 {
                     Picker("TV", selection: Binding(
                         get: { model.selectedDevice?.id ?? model.devices.first?.id ?? UUID() },

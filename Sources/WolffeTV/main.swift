@@ -58,15 +58,25 @@ final class TVModel: ObservableObject {
     @Published var showingRemote = false
     @Published var showingInputManager = false
     @Published var showingDiscovery = false
+    @Published var showingServerSettings = false
     @Published var isDiscovering = false
     @Published var discoveredRokus: [DiscoveredRoku] = []
     @Published var discoveryDiagnostics = "Discovery has not run yet."
     @Published var showingOnboarding: Bool
     @Published var onboardingStep = 0
+    @Published var webServerRunning = false
+    @Published var webServerStatus = "Stopped"
+    @Published var webServerPort = 8765
+    @Published var webHostID = ""
+    @Published var webAccessCode = ""
+    @Published var webMaxClients = 1
+    @Published var hostNetworkInfo = HostNetworkInfo.current()
+    private var webServer:WolffeWebServer?
 
     private let stateKey = "wolffeTVState.v1"
     private let defaults = UserDefaults.standard
     private let onboardingKey = "wolffeTV.hasCompletedOnboarding.v1"
+    private let webPortKey="wolffeTV.webServer.port.v1",webHostIDKey="wolffeTV.webServer.hostID.v1",webAccessCodeKey="wolffeTV.webServer.accessCode.v1",webMaxClientsKey="wolffeTV.webServer.maxClients.v1"
 
     var devices: [RokuDevice] { state.devices }
     var selectedDevice: RokuDevice? {
@@ -80,12 +90,20 @@ final class TVModel: ObservableObject {
         state = WolffeTVState()
         showingOnboarding = !UserDefaults.standard.bool(forKey: "wolffeTV.hasCompletedOnboarding.v1")
         loadOrMigrateState()
+        loadWebServerPreferences()
         if !showingOnboarding {
             if configured { Task { await checkStatus() } }
             else { editorMode = .add; showingDeviceEditor = true }
         }
     }
 
+    func loadWebServerPreferences(){let p=defaults.integer(forKey:webPortKey);webServerPort=p==0 ? 8765:p;webHostID=defaults.string(forKey:webHostIDKey) ?? "WTV-\(UUID().uuidString.prefix(8).uppercased())";webAccessCode=defaults.string(forKey:webAccessCodeKey) ?? String(format:"%06d",Int.random(in:0...999999));let m=defaults.integer(forKey:webMaxClientsKey);webMaxClients=m==0 ? 1:max(1,m);defaults.set(webHostID,forKey:webHostIDKey);defaults.set(webAccessCode,forKey:webAccessCodeKey);saveWebServerPreferences();refreshHostNetworkInfo()}
+    func refreshHostNetworkInfo(){hostNetworkInfo=HostNetworkInfo.current()}
+    func saveWebServerPreferences(){webServerPort=min(65535,max(1024,webServerPort));webMaxClients=max(1,webMaxClients);defaults.set(webServerPort,forKey:webPortKey);defaults.set(webMaxClients,forKey:webMaxClientsKey)}
+    func startWebServer(){guard !webServerRunning,let p=UInt16(exactly:webServerPort)else{return};do{let w=WolffeWebServer(port:p);w.onState={[weak self]a,b in Task{@MainActor in self?.webServerStatus=a;self?.webServerRunning=b}};try w.start();webServer=w;webServerStatus="Starting…"}catch{webServerStatus="Failed: \(error.localizedDescription)"}}
+    func stopWebServer(){webServer?.stop();webServer=nil;webServerRunning=false;webServerStatus="Stopped"}
+    func regenerateAccessCode(){webAccessCode=String(format:"%06d",Int.random(in:0...999999));defaults.set(webAccessCode,forKey:webAccessCodeKey)}
+    var preferredWebURL:String?{hostNetworkInfo.ipv4.first.map{"http://\($0):\(webServerPort)"}}
     func beginOnboardingNetworkCheck() async {
         onboardingStep = 1
         await discoverRokus()
@@ -293,6 +311,7 @@ struct ContentView: View {
         }
         .sheet(isPresented: $model.showingInputManager) { InputManagerView().environmentObject(model) }
         .sheet(isPresented: $model.showingDiscovery) { DiscoveryView().environmentObject(model) }
+        .sheet(isPresented: $model.showingServerSettings) { WebServerSettingsView().environmentObject(model) }
     }
 
     private var dashboard: some View {
@@ -319,6 +338,7 @@ struct ContentView: View {
                         Button("Edit TV") { model.openEditSelected() }.disabled(!model.configured)
                         Button("Customize Inputs") { model.showingInputManager=true }.disabled(!model.configured)
                         Button("Add TV") { model.showingDiscovery = true }
+                          Button("Web Server") { model.showingServerSettings=true }
                     }
                     .buttonStyle(.bordered)
 
@@ -333,7 +353,7 @@ struct ContentView: View {
     private var header: some View {
         HStack {
             VStack(alignment: .leading, spacing: 4) {
-                Text("LOCAL CONTROL · v4 ALPHA 3.7").font(.caption).tracking(3).foregroundStyle(.purple)
+                Text("LOCAL CONTROL · v4 ALPHA 4.0A.2").font(.caption).tracking(3).foregroundStyle(.purple)
                 if model.devices.count > 1 {
                     Picker("TV", selection: Binding(
                         get: { model.selectedDevice?.id ?? model.devices.first?.id ?? UUID() },
@@ -357,6 +377,8 @@ struct ContentView: View {
         }
     }
 }
+
+struct WebServerSettingsView:View{@EnvironmentObject var model:TVModel;@Environment(\.dismiss) var dismiss;var body:some View{VStack(alignment:.leading,spacing:16){HStack{Text("Web Server").font(.title.bold());Spacer();Button("Done"){model.saveWebServerPreferences();dismiss()}};Text(model.webServerStatus).font(.headline);GroupBox("Host"){VStack(alignment:.leading,spacing:8){Text("Host: \(model.hostNetworkInfo.hostName)");Text("Interfaces: \(model.hostNetworkInfo.interfaces.joined(separator:", "))");Text("IPv4: \(model.hostNetworkInfo.ipv4.joined(separator:", "))");Text("IPv6: \(model.hostNetworkInfo.ipv6.joined(separator:", "))");Text("Wolffe Host ID: \(model.webHostID)");Text("Web address: \(model.preferredWebURL ?? "No LAN IPv4 detected")")}.textSelection(.enabled).padding(8)};GroupBox("Server"){VStack(alignment:.leading,spacing:10){Stepper("Port: \(model.webServerPort)",value:$model.webServerPort,in:1024...65535).disabled(model.webServerRunning);HStack{Text("LAN access code:");Text(model.webAccessCode).font(.title3.monospaced().bold());Button("Regenerate"){model.regenerateAccessCode()}};Divider();Text("Reserved for Alpha 4.0C").font(.caption.bold());Stepper("Maximum authenticated client devices: \(model.webMaxClients)",value:$model.webMaxClients,in:1...20);Text("Default 1. Stored now; enforcement begins when authenticated sessions exist.").font(.caption).foregroundStyle(.secondary)}.padding(8)};HStack{Button("Refresh Network Info"){model.refreshHostNetworkInfo()};Spacer();if model.webServerRunning{Button("Stop Server",role:.destructive){model.stopWebServer()}}else{Button("Start Server"){model.startWebServer()}.buttonStyle(.borderedProminent)}}}.padding(24).frame(minWidth:680,minHeight:560)}}
 
 struct OnboardingView: View {
     @EnvironmentObject var model: TVModel

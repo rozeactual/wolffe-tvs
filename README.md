@@ -1,198 +1,321 @@
-# Wolffe TV v3
+# Wolffe TV v4
 
-Wolffe TV is a local-only dashboard for switching a Roku TV between HDMI and AV inputs over Roku's External Control Protocol (ECP). It uses Python's standard library and does not require cloud hosting, accounts, analytics, npm, or third-party Python packages.
+Wolffe TV v4 is the native macOS branch of Wolffe TV, a local-network controller for Roku TVs using Roku's External Control Protocol (ECP).
 
-## Successfully tested television
+> **Status:** v4 is currently an alpha/development build. The native application and Universal DMG build pipeline have been successfully built locally, but public release signing/notarization is a separate release step.
 
-Wolffe TV v3 is based on successful testing with:
+## Developer quick start
 
-- Manufacturer: Hisense
-- Model: 55R6+
-- Hardware/model number: 7215X
-- Roku OS/software version: 16.0.4
-- Software build: 853 / 39H.04E00853A
-- ECP port: 8060
+### Requirements
 
-Other Roku TVs may work, but their input availability and menu wording can differ.
+- macOS development machine
+- Full Xcode installation
+- Swift toolchain supplied through Xcode
+- Git, if cloning from source control
+- A Roku TV reachable from the Mac over the local network for functional testing
 
-## Dashboard controls
+Full Xcode matters. Apple's standalone Command Line Tools live at `/Library/Developer/CommandLineTools`, while a normally installed full Xcode uses `/Applications/Xcode.app/Contents/Developer`. Apple documents `xcode-select --print-path` as the way to inspect the active developer directory. Full Xcode also includes command-line development tools. See Apple's Xcode documentation for current details.
 
-- Apple TV: HDMI 1 / ARC
-- Unused: HDMI 2
-- Unused: HDMI 3
-- Wii: AV / Composite
-- TV Settings: Home, Back, directional controls, and OK
-- Advanced > Reset Setup: deletes the local `config.json`, restarts first-run setup in Terminal, and asks for a new IP address and TV name
+### 1. Install and initialize Xcode
 
-The button labels are currently fixed in `index.html`. The setup name appears as the dashboard heading and browser title.
+Install the current compatible release of Xcode from Apple. Launch Xcode at least once and complete any first-launch setup prompts.
 
-## Roku TV preparation
+Confirm which developer directory is active:
 
-### 1. Enable local network controls
+```bash
+xcode-select --print-path
+```
 
-On the Roku TV, open:
+For a standard Xcode installation, the expected path is:
 
-`Settings > System > Advanced system settings > Control by mobile apps > Network access`
+```text
+/Applications/Xcode.app/Contents/Developer
+```
 
-Choose `Enabled` or `Default`, depending on the options shown by the TV. Roku documents that recent Roku OS versions require Control by mobile apps to be enabled for ECP keypress commands. Developer Mode is not required for the standard input and remote commands used by this dashboard.
+If the standalone Command Line Tools are selected instead, switch to full Xcode:
 
-Source: https://developer.roku.com/dev/docs/external-control-api
+```bash
+sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer
+```
 
-### 2. Find the TV's IP address
+If Xcode is installed somewhere else, substitute its actual path. Apple explicitly supports selecting a nonstandard Xcode location with `xcode-select`.
+
+Verify the toolchain:
+
+```bash
+xcodebuild -version
+swift --version
+xcrun --find swift
+```
+
+### 2. Obtain the source
+
+Clone the repository and enter the project directory:
+
+```bash
+git clone <repository-url>
+cd wolffe-tv-v4-source
+```
+
+For a downloaded source archive, extract it and change into the extracted directory instead.
+
+The root should contain at least:
+
+```text
+Package.swift
+Info.plist
+build-universal-dmg.sh
+Sources/
+```
+
+### 3. Build the Swift package directly
+
+For a normal development build:
+
+```bash
+swift build
+```
+
+For an optimized release build:
+
+```bash
+swift build -c release --product WolffeTV
+```
+
+Swift Package Manager is the project's build system. SwiftPM 6.4 uses Swift Build by default and may place artifacts differently than older SwiftPM versions. Do not write tooling that assumes a fixed `.build/<architecture>/release` path.
+
+To obtain the actual output directory, use:
+
+```bash
+swift build -c release --product WolffeTV --show-bin-path
+```
+
+### 4. Build the Universal macOS application and DMG
+
+Make the build script executable once:
+
+```bash
+chmod +x build-universal-dmg.sh
+```
+
+Then run:
+
+```bash
+./build-universal-dmg.sh
+```
+
+The build script is intended to:
+
+1. Preflight the selected Xcode/Swift environment.
+2. Clean generated `.build` and `build` directories.
+3. Build the `WolffeTV` release product for both `arm64` and `x86_64`.
+4. Ask SwiftPM for the actual binary location with `--show-bin-path`.
+5. Verify that the resulting executable contains both architectures.
+6. Assemble `Wolffe TV.app` with its `Info.plist`.
+7. Apply an ad-hoc signature for local development/testing.
+8. Verify the app bundle before packaging.
+9. Create a DMG containing the app and an Applications shortcut.
+
+SwiftPM 6.4 officially supports multiple architecture arguments when building Universal binaries for Apple platforms, including `--arch arm64 --arch x86_64`.
+
+Expected development artifacts:
+
+```text
+build/Wolffe TV.app
+build/Wolffe-TV-v4-universal.dmg
+```
+
+### 5. Verify the Universal binary
+
+Inspect the executable architectures:
+
+```bash
+lipo -archs "build/Wolffe TV.app/Contents/MacOS/WolffeTV"
+```
+
+The Universal build should report both:
+
+```text
+arm64 x86_64
+```
+
+Inspect the app signature:
+
+```bash
+codesign --verify --deep --strict --verbose=2 "build/Wolffe TV.app"
+```
+
+For an ad-hoc development build, this verifies structural signing but does **not** turn the app into a Developer ID/notarized public release.
+
+### 6. Test the DMG
 
 Open:
 
-`Settings > Network > About`
+```text
+build/Wolffe-TV-v4-universal.dmg
+```
 
-Write down the local IPv4 address. The TV and the Mac running Wolffe TV must remain reachable over the local network.
+Copy Wolffe TV to Applications and launch the newly built copy. Test at minimum:
 
-A reserved/fixed DHCP assignment in the router is recommended so the address does not change.
+- first-run setup;
+- TV name persistence;
+- IPv4 configuration;
+- connection testing;
+- HDMI 1 switching;
+- HDMI 2 switching;
+- HDMI 3 switching;
+- AV/composite switching;
+- online/offline status;
+- setup reset;
+- relaunch with persisted settings.
 
-### 3. Reduce Roku tracking and Home-screen clutter
+A release intended for both architectures should be tested on Apple silicon and Intel hardware before publication.
 
-Available settings vary by Roku TV and software build. Use only options actually shown on your television.
+## Clean builds
 
-- Open `Settings > Privacy > Smart TV Experience` and turn off `Use info from TV inputs` or the equivalent Smart TV Experience option. Roku states this disables ACR collection for content viewed through connected inputs and the TV antenna.
-- If `Settings > Privacy > Advertising` is present, enable `Limit ad tracking` and reset the advertising identifier. This option is not available on every television.
-- Under `Settings > Privacy > Microphone`, restrict channel microphone access if voice features are not wanted.
-- Under `Settings > Home screen`, hide promotional or recommendation categories that your software build allows you to hide.
-- Remove unused streaming channels from Roku Home.
-- Under `Settings > System > Power > Power on`, choose HDMI 1 if the Apple TV should be the normal startup input.
+Remove all generated SwiftPM and packaging output:
 
-Roku notes that turning off Smart TV Experience affects ACR collection from TV inputs and antenna viewing, but does not stop all data associated with Internet streaming services.
+```bash
+rm -rf .build build
+```
 
-Source: https://docs.roku.com/published/smarttvexperience/en/US
+Then rebuild:
 
-## Block the TV's Internet/WAN access while keeping local LAN access
+```bash
+./build-universal-dmg.sh
+```
 
-For the strongest privacy setup, keep the television connected to your home network but prevent it from reaching the public Internet. Wolffe TV only needs local connectivity between the computer running the dashboard and the Roku TV.
+This is particularly useful after changing Xcode/toolchains or when investigating stale build artifacts.
 
-Router and firewall terminology varies by manufacturer. Look for features named something similar to `Block Internet`, `Pause Internet`, `Access Control`, `Firewall Rules`, `Device Rules`, `Parental Controls`, or `WAN Access`.
+## Troubleshooting
 
-The desired result is simple:
+### `SwiftUIMacros.StateMacro` / `plugin for module 'SwiftUIMacros' not found`
+
+Check the active developer directory:
+
+```bash
+xcode-select --print-path
+```
+
+If it reports:
 
 ```text
-Roku TV -> Internet/WAN: BLOCKED
-Roku TV <-> trusted local network/LAN: ALLOWED
+/Library/Developer/CommandLineTools
 ```
 
-General setup:
-
-1. Find the Roku TV in your router or firewall's connected-device/client list.
-2. If supported, reserve its current IP address with DHCP so the TV keeps the same local address.
-3. Create a device-specific rule that blocks Internet/WAN access for the Roku TV.
-4. Keep access to the local LAN enabled so the computer running Wolffe TV can still reach the television.
-5. Avoid options such as `Client Isolation`, `AP Isolation`, `Device Isolation`, `Guest Isolation`, `Block Local Network`, or similar features if they prevent trusted local devices from communicating with the TV.
-6. Do not expose Wolffe TV or Roku ECP to the public Internet with port forwarding.
-
-### Verify that local control still works
-
-From the computer running Wolffe TV, replace `TV_IP` with the television's address:
+select the full Xcode installation, then clean and rebuild:
 
 ```bash
-curl --max-time 5 "http://TV_IP:8060/query/device-info"
-curl --max-time 5 "http://TV_IP:8060/query/apps"
+sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer
+rm -rf .build build
+./build-universal-dmg.sh
 ```
 
-Both commands should continue returning XML after Internet/WAN access is blocked. If they stop working, review the router/firewall rule and confirm it blocks Internet access only, rather than local LAN communication.
+### Build succeeds but the script cannot find `WolffeTV`
 
-## OTA software updates and local ECP controls
-
-Wolffe TV does not disable the TV's OTA/software-update components. A WAN-blocked TV cannot normally download an online Roku update while the block is active.
-
-For a controlled update window:
-
-1. Temporarily disable or pause the Roku TV Internet/WAN-block rule in your router or firewall.
-2. On the TV, open `Settings > System > Software update > Check Now`.
-3. Allow the update and any required restart to finish.
-4. Confirm that the dashboard still switches inputs.
-5. Re-enable the Internet/WAN-block rule.
-
-Roku documents `Settings > System > Software update > Check Now` as the manual software-update path and notes that disconnected Roku TV systems may also support USB updates.
-
-Source: https://support.roku.com/article/article/update-the-software-on-your-streaming-device
-
-For dashboard control, keep `Control by mobile apps > Network access` enabled. ECP operates over the local network on port 8060.
-
-## Python requirement on macOS
-
-Wolffe TV requires Python 3. Do not assume every Mac already has a suitable user-installed copy. Before the first launch, open Terminal and run:
+Do not hard-code an old SwiftPM output directory. Query SwiftPM:
 
 ```bash
-python3 --version
+swift build -c release --product WolffeTV --arch arm64 --arch x86_64 --show-bin-path
 ```
 
-If Terminal prints `Python 3.x.x`, continue to the first-run instructions below. Wolffe TV uses only Python's standard library, so no extra Python packages are required.
+SwiftPM 6.4 changed build artifact placement and explicitly recommends `--show-bin-path` for determining the output location.
 
-If Terminal reports `command not found`, asks you to install developer tools, or the launcher immediately closes with a Python error:
+### macOS says the app is damaged or incomplete
 
-1. Visit the official [Python releases for macOS](https://www.python.org/downloads/macos/) page.
-2. Download a current stable macOS installer. Python.org provides universal installers that support Apple Silicon and Intel Macs.
-3. Open the downloaded `.pkg` file and complete the standard macOS installation.
-4. Close and reopen Terminal.
-5. Confirm the installation:
+First verify that the executable actually exists:
 
 ```bash
-python3 --version
+ls -l "build/Wolffe TV.app/Contents/MacOS/WolffeTV"
 ```
 
-6. When a Python 3 version is displayed, continue with Wolffe TV setup.
-
-Do not delete or alter any Python components managed by Apple. Installing Python from python.org can coexist with Apple's own system or developer-tool Python.
-
-## First run on macOS
-
-1. Download and unzip `wolffe-tv-v3.zip`.
-2. Open the `wolffe-tv-v3` folder.
-3. Double-click `run.command`.
-4. Enter the Roku TV's local IPv4 address.
-5. Enter a friendly TV name, such as `Living Room TV`.
-6. Setup creates a private `config.json` and starts the server.
-7. Open `http://localhost:8787` on the Mac.
-
-If macOS blocks the launcher, open Terminal in the project folder and run:
+Then verify the bundle's signature:
 
 ```bash
-chmod +x run.command
-./run.command
+codesign --verify --deep --strict --verbose=2 "build/Wolffe TV.app"
 ```
 
-Later launches reuse `config.json` and skip setup.
+A packaging failure should not be treated as a successful app build. Delete `build` and rebuild after resolving the underlying error.
 
-## Reset setup from the dashboard
+## Project architecture
 
-1. Open `TV Settings`.
-2. Expand `Advanced` at the bottom.
-3. Select `Reset Setup`.
-4. Confirm the warning.
-5. Return to the Terminal window and enter the new IP address and TV name.
-
-Reset Setup deletes only `config.json`. It does not reset, unlink, modify, or factory-reset the Roku TV.
-
-## Open the dashboard from an iPhone or iPad
-
-The device must be able to reach the Mac on the local network. On the Mac, run:
-
-```bash
-ipconfig getifaddr en0
+```text
+wolffe-tv-v4-source/
+├── Package.swift
+├── Info.plist
+├── AppIcon-source.png
+├── build-universal-dmg.sh
+├── README.md
+└── Sources/
+    └── WolffeTV/
+        └── main.swift
 ```
 
-If that returns `10.1.0.50`, for example, open `http://10.1.0.50:8787` on the other device.
+`Package.swift` defines the Swift package and executable product. `main.swift` contains the current SwiftUI application and Roku ECP client logic. `Info.plist` supplies application-bundle metadata. `build-universal-dmg.sh` handles Universal release building and local DMG packaging.
 
-## GitHub and distribution safety
+## Local-network development
 
-- `config.json` is excluded by `.gitignore` and is not included in the release ZIP.
-- `config.example.json` contains placeholders only and is safe to publish.
-- The repository must not contain Roku serial numbers, device IDs, advertising IDs, MAC addresses, passwords, or private network details.
-- Run `git status` before every push and verify that `config.json` is not staged.
+The application communicates with the configured Roku TV over the local network. Keep the computer and television mutually reachable on the LAN while testing. Internet/WAN access for the television is not required for the local ECP input-control workflow itself.
 
-## Stop the server
+Do not expose the Roku ECP service to the public Internet.
 
-Return to Terminal and press Control+C.
+## Version control guidance
 
-## Security notes
+Do not commit:
 
-- The server accepts only a fixed allowlist of Roku key commands.
-- The setup-reset endpoint is available only through the local dashboard server, but the server does not provide authentication.
-- Do not expose port 8787 or Roku ECP port 8060 to the public Internet.
-- Use this only on a trusted home LAN.
+- `.build/`;
+- `build/`;
+- locally generated DMGs;
+- signing credentials;
+- notarization credentials;
+- Roku serial numbers, MAC addresses, advertising identifiers, or private device information.
+
+A typical project `.gitignore` should therefore include at least:
+
+```gitignore
+.build/
+build/
+.DS_Store
+*.dmg
+```
+
+## Signing and public distribution
+
+The development build script uses ad-hoc signing for local testing. That is intentionally different from a public macOS release.
+
+For direct public distribution outside the Mac App Store, Apple documents Developer ID signing and notarization. Apple's notary service checks Developer ID-signed software and supports macOS applications and disk images. Current command-line notarization workflows use `notarytool`; Apple no longer accepts `altool` for this workflow.
+
+A future release workflow should therefore keep these stages separate:
+
+```text
+source
+  ↓
+Universal release build
+  ↓
+.app bundle
+  ↓
+Developer ID signing
+  ↓
+DMG packaging/signing
+  ↓
+Apple notarization
+  ↓
+staple/validate ticket
+  ↓
+release artifact
+```
+
+Never commit Apple Developer certificates, private keys, app-specific passwords, or notary-service credentials to the repository.
+
+## Notes for contributors
+
+- Keep the Roku interaction layer local-network only.
+- Prefer APIs available in the project's declared macOS deployment target.
+- Preserve support for both Apple silicon and Intel until the project explicitly changes that policy.
+- Keep packaging failures fatal. A partially assembled `.app` should never be presented as a successful release artifact.
+- When changing SwiftPM build arguments, use the same arguments with `--show-bin-path` when locating the resulting product.
+- Test networking changes against a real Roku TV before treating them as release-ready.
+
+## Current status
+
+The Universal macOS build pipeline has successfully produced a working development DMG after correcting two environment/tooling issues encountered during early v4 development: selecting full Xcode rather than standalone Command Line Tools, and querying SwiftPM for its actual output path rather than assuming an older `.build` layout.

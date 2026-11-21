@@ -1,24 +1,23 @@
-# Wolffe TV v4 Alpha 3.2.1
+# Wolffe TV v4 Alpha 3.3.1
 
-Adds per-TV physical-input detection, dynamic input buttons, renaming, visibility controls, restore, and refresh while preserving per-TV customizations. This hotfix uses Apple-platform `Foundation` for `XMLParser`; it does not import `FoundationXML`.
+**Alpha 3.3.1 hotfix:** fixes the Swift comparison syntax in SSDP result sorting.
+
+Adds automatic Roku SSDP discovery, duplicate detection, discovered device names/models, one-click adding, automatic input detection after addition, and manual-IP fallback.
 
 ## Build from Downloads
-
 ```bash
-cd ~/Downloads/wolffe-tv-v4-alpha3.2.1-source
+cd ~/Downloads/wolffe-tv-v4-alpha3.3.1-source
 xattr -dr com.apple.quarantine .
 chmod +x build-universal-dmg.sh
 ./build-universal-dmg.sh
 ```
+Expected DMG: `build/Wolffe-TV-v4-alpha3.3.1-universal.dmg`.
 
-Expected DMG: `build/Wolffe-TV-v4-alpha3.2.1-universal.dmg`.
-
-Test both saved TVs, detect inputs, rename/hide one input on TV2, refresh, and verify the customization stays isolated to TV2.
+Test Discover TVs, confirm both existing TVs are marked Added, retry without duplicates, and verify manual IP entry remains available. SSDP may be blocked by VLANs, guest Wi-Fi, client isolation, multicast filtering, or firewall policy.
 
 Apache License 2.0. Experimental software provided **AS IS**. Ad-hoc signed, not Developer ID signed or Apple-notarized.
 
 ---
-
 **Built with Microsoft Copilot ❤️**
 
 Visual in this project was generated with Microsoft Copilot.

@@ -56,6 +56,9 @@ final class TVModel: ObservableObject {
     @Published var editorMode: DeviceEditorMode = .add
     @Published var showingRemote = false
     @Published var showingInputManager = false
+    @Published var showingDiscovery = false
+    @Published var isDiscovering = false
+    @Published var discoveredRokus: [DiscoveredRoku] = []
 
     private let stateKey = "wolffeTVState.v1"
     private let defaults = UserDefaults.standard
@@ -154,6 +157,9 @@ final class TVModel: ObservableObject {
         showingDeviceEditor = true
     }
 
+    func isKnownHost(_ host:String)->Bool { state.devices.contains{$0.host==host} }
+    func discoverRokus() async { isDiscovering=true;message="";discoveredRokus=await RokuDiscovery.discover();isDiscovering=false;message=discoveredRokus.isEmpty ? "No Roku TVs discovered." : "✓ Found \(discoveredRokus.count) Roku TV(s)" }
+    func addDiscovered(_ r:DiscoveredRoku) async { guard !isKnownHost(r.host) else{message="That TV is already added.";return};let d=RokuDevice(customName:r.name,host:r.host,discoveredName:r.name,modelNumber:r.modelNumber,softwareVersion:r.softwareVersion);state.devices.append(d);state.selectedDeviceID=d.id;persist();await checkStatus();await refreshInputs();message="✓ Added \(r.name)" }
     func replaceInputs(_ v:[RokuInput]) { guard let id=selectedDevice?.id,let i=state.devices.firstIndex(where:{$0.id==id}) else{return};state.devices[i].inputs=v;persist() }
     func refreshInputs() async { guard let d=selectedDevice,let u=URL(string:"http://\(d.host):8060/query/apps") else{return};do{var r=URLRequest(url:u);r.timeoutInterval=5;let(data,res)=try await URLSession.shared.data(for:r);guard(res as? HTTPURLResponse)?.statusCode==200 else{throw URLError(.badServerResponse)};let fresh=InputParser.parse(data);guard !fresh.isEmpty else{message="No physical inputs detected.";return};let old=Dictionary(uniqueKeysWithValues:selectedInputs.map{($0.ecpID,$0)});let merged=fresh.map{f->RokuInput in var x=f;if let o=old[f.ecpID]{x.customName=o.customName;x.isVisible=o.isVisible;x.sortOrder=o.sortOrder};return x};replaceInputs(merged);message="✓ Detected \(merged.count) inputs for \(d.customName)"}catch{message="Could not refresh inputs from \(d.customName)."} }
     func activate(_ input:RokuInput) async { guard let k=input.key else{message="Input is not mapped.";return};await send(k,label:"\(input.displayName) selected") }
@@ -267,7 +273,8 @@ struct ContentView: View {
                         Button("Test Connection") { Task { await model.checkStatus() } }.disabled(!model.configured)
                         Button("Edit TV") { model.openEditSelected() }.disabled(!model.configured)
                         Button("Customize Inputs") { model.showingInputManager=true }.disabled(!model.configured)
-                        Button("Add TV") { model.openAddDevice() }
+                        Button("Discover TVs") { model.showingDiscovery=true }
+                          Button("Add TV") { model.openAddDevice() }
                     }
                     .buttonStyle(.bordered)
 
@@ -282,12 +289,13 @@ struct ContentView: View {
         }
         .sheet(isPresented: $model.showingRemote) { RemoteView().environmentObject(model) }
         .sheet(isPresented: $model.showingInputManager) { InputManagerView().environmentObject(model) }
+          .sheet(isPresented: $model.showingDiscovery) { DiscoveryView().environmentObject(model) }
     }
 
     private var header: some View {
         HStack {
             VStack(alignment: .leading, spacing: 4) {
-                Text("LOCAL CONTROL · v4 ALPHA 3.2.1").font(.caption).tracking(3).foregroundStyle(.purple)
+                Text("LOCAL CONTROL · v4 ALPHA 3.3").font(.caption).tracking(3).foregroundStyle(.purple)
                 if model.devices.count > 1 {
                     Picker("TV", selection: Binding(
                         get: { model.selectedDevice?.id ?? model.devices.first?.id ?? UUID() },

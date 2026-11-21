@@ -1,5 +1,6 @@
 import SwiftUI
 import Foundation
+import AppKit
 
 struct RokuDevice: Codable, Identifiable, Hashable {
     var id: UUID
@@ -60,9 +61,12 @@ final class TVModel: ObservableObject {
     @Published var isDiscovering = false
     @Published var discoveredRokus: [DiscoveredRoku] = []
     @Published var discoveryDiagnostics = "Discovery has not run yet."
+    @Published var showingOnboarding: Bool
+    @Published var onboardingStep = 0
 
     private let stateKey = "wolffeTVState.v1"
     private let defaults = UserDefaults.standard
+    private let onboardingKey = "wolffeTV.hasCompletedOnboarding.v1"
 
     var devices: [RokuDevice] { state.devices }
     var selectedDevice: RokuDevice? {
@@ -74,13 +78,36 @@ final class TVModel: ObservableObject {
 
     init() {
         state = WolffeTVState()
+        showingOnboarding = !UserDefaults.standard.bool(forKey: "wolffeTV.hasCompletedOnboarding.v1")
         loadOrMigrateState()
-        if configured {
-            Task { await checkStatus() }
-        } else {
-            editorMode = .add
-            showingDeviceEditor = true
+        if !showingOnboarding {
+            if configured { Task { await checkStatus() } }
+            else { editorMode = .add; showingDeviceEditor = true }
         }
+    }
+
+    func beginOnboardingNetworkCheck() async {
+        onboardingStep = 1
+        await discoverRokus()
+        onboardingStep = 2
+    }
+
+    func completeOnboarding() {
+        defaults.set(true, forKey: onboardingKey)
+        showingOnboarding = false
+        if configured { Task { await checkStatus() } }
+        else { editorMode = .add; showingDeviceEditor = true }
+    }
+
+    func completeOnboardingWithManualEntry() {
+        defaults.set(true, forKey: onboardingKey)
+        showingOnboarding = false
+        openAddDevice()
+    }
+
+    func openLocalNetworkSettings() {
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_LocalNetwork") else { return }
+        NSWorkspace.shared.open(url)
     }
 
     func selectDevice(_ id: UUID) {
@@ -253,7 +280,9 @@ struct ContentView: View {
 
     var body: some View {
         Group {
-            if model.showingRemote {
+            if model.showingOnboarding {
+                OnboardingView().environmentObject(model)
+            } else if model.showingRemote {
                 RemoteView().environmentObject(model)
             } else {
                 dashboard
@@ -304,7 +333,7 @@ struct ContentView: View {
     private var header: some View {
         HStack {
             VStack(alignment: .leading, spacing: 4) {
-                Text("LOCAL CONTROL · v4 ALPHA 3.6.1").font(.caption).tracking(3).foregroundStyle(.purple)
+                Text("LOCAL CONTROL · v4 ALPHA 3.7").font(.caption).tracking(3).foregroundStyle(.purple)
                 if model.devices.count > 1 {
                     Picker("TV", selection: Binding(
                         get: { model.selectedDevice?.id ?? model.devices.first?.id ?? UUID() },
@@ -325,6 +354,84 @@ struct ContentView: View {
             Spacer()
             Label(model.online ? "TV ONLINE" : "TV OFFLINE", systemImage: "circle.fill")
                 .font(.caption).foregroundStyle(model.online ? .green : .red)
+        }
+    }
+}
+
+struct OnboardingView: View {
+    @EnvironmentObject var model: TVModel
+
+    var body: some View {
+        ZStack {
+            LinearGradient(colors: [.black, Color(red: 0.09, green: 0.06, blue: 0.17)], startPoint: .bottom, endPoint: .top).ignoresSafeArea()
+            VStack(spacing: 24) {
+                Image(systemName: model.onboardingStep == 2 ? "tv.and.hifispeaker.fill" : "network")
+                    .font(.system(size: 58)).foregroundStyle(.purple)
+
+                if model.onboardingStep == 0 { welcome }
+                else if model.onboardingStep == 1 { checking }
+                else { results }
+            }
+            .padding(42).frame(maxWidth: 760)
+        }
+        .foregroundStyle(.white)
+    }
+
+    private var welcome: some View {
+        VStack(spacing: 18) {
+            Text("Welcome to Wolffe TV").font(.largeTitle.bold())
+            Text("Wolffe TV controls Roku televisions directly over your local network.")
+                .font(.title3).multilineTextAlignment(.center)
+            Text("When you continue, macOS may ask whether Wolffe TV can find and communicate with devices on your local network. Choose Allow so Wolffe TV can discover and control your televisions.")
+                .foregroundStyle(.secondary).multilineTextAlignment(.center)
+            Button("Continue") { Task { await model.beginOnboardingNetworkCheck() } }
+                .buttonStyle(.borderedProminent).controlSize(.large)
+        }
+    }
+
+    private var checking: some View {
+        VStack(spacing: 16) {
+            ProgressView().controlSize(.large)
+            Text("Checking your local network…").font(.title2.bold())
+            Text("If macOS displays a Local Network permission alert, choose Allow.")
+                .foregroundStyle(.secondary).multilineTextAlignment(.center)
+        }
+    }
+
+    private var results: some View {
+        VStack(spacing: 18) {
+            if model.discoveredRokus.isEmpty {
+                Text("No Roku TVs Found").font(.largeTitle.bold())
+                Text("Wolffe TV could not find a responding Roku TV. This can also happen when a TV is offline or the network blocks discovery.")
+                    .foregroundStyle(.secondary).multilineTextAlignment(.center)
+                Text(model.discoveryDiagnostics).font(.caption.monospaced()).foregroundStyle(.secondary)
+                HStack {
+                    Button("Open Local Network Settings") { model.openLocalNetworkSettings() }
+                    Button("Search Again") { Task { await model.beginOnboardingNetworkCheck() } }.buttonStyle(.borderedProminent)
+                }
+                Button("Enter IP Manually") { model.completeOnboardingWithManualEntry() }
+            } else {
+                Text("Roku TVs Found").font(.largeTitle.bold())
+                VStack(spacing: 10) {
+                    ForEach(model.discoveredRokus) { roku in
+                        HStack {
+                            VStack(alignment: .leading) {
+                                Text(roku.name).font(.headline)
+                                Text([roku.host, roku.modelNumber].compactMap { $0 }.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            if model.isKnownHost(roku.host) { Label("Added", systemImage: "checkmark.circle.fill").foregroundStyle(.green) }
+                            else { Button("Add") { Task { await model.addDiscovered(roku) } }.buttonStyle(.borderedProminent) }
+                        }.padding(12).background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 12))
+                    }
+                }
+                Text(model.discoveryDiagnostics).font(.caption.monospaced()).foregroundStyle(.secondary)
+                HStack {
+                    Button("Search Again") { Task { await model.beginOnboardingNetworkCheck() } }
+                    Button("Continue") { model.completeOnboarding() }.buttonStyle(.borderedProminent)
+                }
+                Button("Enter IP Manually") { model.completeOnboardingWithManualEntry() }
+            }
         }
     }
 }

@@ -21,11 +21,20 @@ final class InputParser:NSObject,XMLParserDelegate {
     func parser(_ parser:XMLParser,didEndElement e:String,namespaceURI:String?,qualifiedName:String?){if e=="app",let id=appID,appType=="tvin"{let n=text.trimmingCharacters(in:.whitespacesAndNewlines);found.append(RokuInput(ecpID:id,discoveredName:n.isEmpty ? id:n,sortOrder:found.count))};if e=="app"{appID=nil;appType=nil;text=""}}
 }
 
-struct InputGrid:View {
- @EnvironmentObject var model:TVModel; let inputs:[RokuInput]
- var body:some View { let shown=inputs.filter{$0.isVisible}.sorted{$0.sortOrder<$1.sortOrder}; return LazyVGrid(columns:[GridItem(.flexible()),GridItem(.flexible())],spacing:16){ForEach(shown){i in Button{Task{await model.activate(i)}}label:{VStack(alignment:.leading){Text(i.displayName.uppercased()).font(.title3.bold()).lineLimit(2).minimumScaleFactor(0.7);Text(i.subtitle).font(.caption).foregroundStyle(.white.opacity(0.7))}.frame(maxWidth:.infinity,minHeight:90,alignment:.leading).padding().background(.purple.opacity(0.65),in:RoundedRectangle(cornerRadius:22))}.buttonStyle(.plain).disabled(i.key==nil)}} }
+struct InputGrid: View {
+ @EnvironmentObject var model: TVModel; let inputs: [RokuInput]
+ var body: some View {
+  let shown = inputs.filter { $0.isVisible }.sorted { $0.sortOrder < $1.sortOrder }
+  return LazyVGrid(columns: [GridItem(.adaptive(minimum: 245), spacing: 16)], spacing: 16) {
+   ForEach(shown) { input in
+    Button { Task { await model.activate(input) } } label: {
+     VStack(alignment: .leading, spacing: 6) { Text(input.displayName.uppercased()).font(.title3.bold()).lineLimit(2).minimumScaleFactor(0.72); Text(input.subtitle).font(.caption).foregroundStyle(.white.opacity(0.7)) }
+      .frame(maxWidth: .infinity, minHeight: 90, alignment: .leading).padding().background(.purple.opacity(0.65), in: RoundedRectangle(cornerRadius: 22))
+    }.buttonStyle(.plain).disabled(input.key == nil)
+   }
+  }
+ }
 }
-
 struct InputManagerView:View {
  @EnvironmentObject var model:TVModel; @Environment(\.dismiss) var dismiss; @State var drafts:[RokuInput]=[]
  var body:some View { VStack(spacing:14){HStack{Text("Customize Inputs").font(.title.bold());Spacer();Button("Done"){model.replaceInputs(drafts);dismiss()}}

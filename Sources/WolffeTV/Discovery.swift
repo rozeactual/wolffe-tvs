@@ -36,7 +36,7 @@ enum RokuDiscovery {
 
 struct DiscoveryView:View {
  @EnvironmentObject var model:TVModel;@Environment(\.dismiss)var dismiss
- var body:some View{VStack(spacing:16){HStack{VStack(alignment:.leading){Text("Discover Roku TVs").font(.title.bold());Text("Search the local network for Roku ECP devices.").foregroundStyle(.secondary)};Spacer();Button("Done"){dismiss()}}
+ var body:some View{VStack(spacing:16){HStack{VStack(alignment:.leading){Text("Add a Roku TV").font(.title.bold());Text("Search the local network, or enter an IP address manually.").foregroundStyle(.secondary)};Spacer();Button("Done"){dismiss()}}
   if model.isDiscovering{ProgressView("Looking for Roku TVs…").frame(maxWidth:.infinity,maxHeight:.infinity)}else if model.discoveredRokus.isEmpty{VStack{Image(systemName:"wifi.exclamationmark").font(.largeTitle);Text("No Roku TVs found").font(.headline);Text("Try again or enter the IP address manually.").foregroundStyle(.secondary)}.frame(maxWidth:.infinity,maxHeight:.infinity)}else{List(model.discoveredRokus){r in HStack{VStack(alignment:.leading){Text(r.name).font(.headline);Text([r.host,r.modelNumber].compactMap{$0}.joined(separator:" · ")).font(.caption).foregroundStyle(.secondary)};Spacer();if model.isKnownHost(r.host){Label("Added",systemImage:"checkmark.circle.fill").foregroundStyle(.green)}else{Button("Add"){Task{await model.addDiscovered(r)}}.buttonStyle(.borderedProminent)}}}}
   HStack{Button("Search Again"){Task{await model.discoverRokus()}}.buttonStyle(.borderedProminent).disabled(model.isDiscovering);Button("Enter IP Manually"){dismiss();model.openAddDevice()};Spacer();Text(model.message).foregroundStyle(.secondary)}
  }.padding(24).frame(minWidth:650,minHeight:470).task{if model.discoveredRokus.isEmpty{await model.discoverRokus()}}}

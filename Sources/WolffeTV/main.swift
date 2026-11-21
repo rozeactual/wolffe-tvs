@@ -251,6 +251,21 @@ struct ContentView: View {
     @EnvironmentObject var model: TVModel
 
     var body: some View {
+        Group {
+            if model.showingRemote {
+                RemoteView().environmentObject(model)
+            } else {
+                dashboard
+            }
+        }
+        .sheet(isPresented: $model.showingDeviceEditor) {
+            DeviceEditorView(mode: model.editorMode).environmentObject(model)
+        }
+        .sheet(isPresented: $model.showingInputManager) { InputManagerView().environmentObject(model) }
+        .sheet(isPresented: $model.showingDiscovery) { DiscoveryView().environmentObject(model) }
+    }
+
+    private var dashboard: some View {
         ZStack {
             LinearGradient(colors: [.black, Color(red: 0.09, green: 0.06, blue: 0.17)], startPoint: .bottom, endPoint: .top)
                 .ignoresSafeArea()
@@ -273,8 +288,7 @@ struct ContentView: View {
                         Button("Test Connection") { Task { await model.checkStatus() } }.disabled(!model.configured)
                         Button("Edit TV") { model.openEditSelected() }.disabled(!model.configured)
                         Button("Customize Inputs") { model.showingInputManager=true }.disabled(!model.configured)
-                        Button("Discover TVs") { model.showingDiscovery=true }
-                          Button("Add TV") { model.openAddDevice() }
+                        Button("Add TV") { model.showingDiscovery = true }
                     }
                     .buttonStyle(.bordered)
 
@@ -284,18 +298,12 @@ struct ContentView: View {
             }
         }
         .foregroundStyle(.white)
-        .sheet(isPresented: $model.showingDeviceEditor) {
-            DeviceEditorView(mode: model.editorMode).environmentObject(model)
-        }
-        .sheet(isPresented: $model.showingRemote) { RemoteView().environmentObject(model) }
-        .sheet(isPresented: $model.showingInputManager) { InputManagerView().environmentObject(model) }
-          .sheet(isPresented: $model.showingDiscovery) { DiscoveryView().environmentObject(model) }
     }
 
     private var header: some View {
         HStack {
             VStack(alignment: .leading, spacing: 4) {
-                Text("LOCAL CONTROL · v4 ALPHA 3.3").font(.caption).tracking(3).foregroundStyle(.purple)
+                Text("LOCAL CONTROL · v4 ALPHA 3.4.2").font(.caption).tracking(3).foregroundStyle(.purple)
                 if model.devices.count > 1 {
                     Picker("TV", selection: Binding(
                         get: { model.selectedDevice?.id ?? model.devices.first?.id ?? UUID() },
@@ -396,47 +404,80 @@ struct DeviceEditorView: View {
 
 struct RemoteView: View {
     @EnvironmentObject var model: TVModel
-    @Environment(\.dismiss) private var dismiss
+    var body: some View {
+        ZStack {
+            LinearGradient(colors: [.black, Color(red: 0.09, green: 0.06, blue: 0.17)], startPoint: .bottom, endPoint: .top)
+                .ignoresSafeArea()
+            GeometryReader { proxy in
+            let width = proxy.size.width
+            let narrow = width < 520
+            let columns = narrow ? [GridItem(.flexible()), GridItem(.flexible())] : [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())]
+
+            ScrollView {
+                VStack(spacing: 18) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("TV REMOTE").font(.title2.bold()).tracking(2)
+                            Text(model.selectedDevice?.customName ?? "No TV selected").foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Button { model.showingRemote = false } label: { Label("Back to Inputs", systemImage: "chevron.left") }
+                    }
+
+                    RemoteTile(title: "HOME", icon: "house.fill", tint: .gray) { await model.send("Home", label: "Home") }
+
+                    VStack(spacing: 10) {
+                        RemoteTile(title: nil, icon: "chevron.up", tint: .gray) { await model.send("Up", label: "Up") }.frame(width: 120)
+                        HStack(spacing: 10) {
+                            RemoteTile(title: nil, icon: "chevron.left", tint: .gray) { await model.send("Left", label: "Left") }
+                            RemoteTile(title: "OK", icon: nil, tint: .purple) { await model.send("Select", label: "OK") }
+                            RemoteTile(title: nil, icon: "chevron.right", tint: .gray) { await model.send("Right", label: "Right") }
+                        }.frame(maxWidth: 440)
+                        RemoteTile(title: nil, icon: "chevron.down", tint: .gray) { await model.send("Down", label: "Down") }.frame(width: 120)
+                    }
+
+                    LazyVGrid(columns: columns, spacing: 12) {
+                        RemoteTile(title: "BACK", icon: "arrow.uturn.backward", tint: .gray) { await model.send("Back", label: "Back") }
+                        RemoteTile(title: "PLAY", icon: "playpause.fill", tint: .gray) { await model.send("Play", label: "Play/Pause") }
+                        RemoteTile(title: "OPTIONS", icon: "asterisk", tint: .gray) { await model.send("Info", label: "Options") }
+                        RemoteTile(title: "VOL −", icon: "speaker.minus.fill", tint: .gray) { await model.send("VolumeDown", label: "Volume down") }
+                        RemoteTile(title: "MUTE", icon: "speaker.slash.fill", tint: .gray) { await model.send("VolumeMute", label: "Mute") }
+                        RemoteTile(title: "VOL +", icon: "speaker.plus.fill", tint: .gray) { await model.send("VolumeUp", label: "Volume up") }
+                        RemoteTile(title: "REPLAY", icon: "gobackward", tint: .gray) { await model.send("InstantReplay", label: "Instant replay") }
+                        RemoteTile(title: "POWER ON", icon: "power", tint: .gray) { await model.send("PowerOn", label: "Power on") }
+                        RemoteTile(title: "POWER OFF", icon: "power", tint: .red) { await model.send("PowerOff", label: "Power off") }
+                    }
+
+                    Text(model.message).foregroundStyle(.secondary).frame(minHeight: 24)
+                }
+                .padding(26)
+                .frame(maxWidth: .infinity)
+            }
+        }
+        }
+        .foregroundStyle(.white)
+    }
+}
+
+struct RemoteTile: View {
+    let title: String?
+    let icon: String?
+    let tint: Color
+    let action: () async -> Void
 
     var body: some View {
-        VStack(spacing: 16) {
-            HStack {
-                VStack(alignment: .leading) {
-                    Text("TV REMOTE").font(.title2.bold()).tracking(2)
-                    Text(model.selectedDevice?.customName ?? "No TV selected").foregroundStyle(.secondary)
-                }
-                Spacer()
-                Button("Done") { dismiss() }
+        Button { Task { await action() } } label: {
+            VStack(spacing: 7) {
+                if let icon { Image(systemName: icon).font(.system(size: 22, weight: .semibold)) }
+                if let title { Text(title).font(.caption.bold()).lineLimit(1).minimumScaleFactor(0.8) }
             }
-            RButton("HOME", "house.fill") { await model.send("Home", label: "Home") }
-            VStack(spacing: 8) {
-                RButton("", "chevron.up") { await model.send("Up", label: "Up") }.frame(width: 86)
-                HStack(spacing: 8) {
-                    RButton("", "chevron.left") { await model.send("Left", label: "Left") }
-                    RButton("OK", nil, true) { await model.send("Select", label: "OK") }
-                    RButton("", "chevron.right") { await model.send("Right", label: "Right") }
-                }
-                RButton("", "chevron.down") { await model.send("Down", label: "Down") }.frame(width: 86)
-            }
-            HStack(spacing: 10) {
-                RButton("BACK", "arrow.uturn.backward") { await model.send("Back", label: "Back") }
-                RButton("PLAY", "playpause.fill") { await model.send("Play", label: "Play/Pause") }
-                RButton("OPTIONS", "asterisk") { await model.send("Info", label: "Options") }
-            }
-            HStack(spacing: 10) {
-                RButton("VOL −", "speaker.minus.fill") { await model.send("VolumeDown", label: "Volume down") }
-                RButton("MUTE", "speaker.slash.fill") { await model.send("VolumeMute", label: "Mute") }
-                RButton("VOL +", "speaker.plus.fill") { await model.send("VolumeUp", label: "Volume up") }
-            }
-            HStack(spacing: 10) {
-                RButton("REPLAY", "gobackward") { await model.send("InstantReplay", label: "Instant replay") }
-                RButton("POWER ON", "power") { await model.send("PowerOn", label: "Power on") }
-                RButton("POWER OFF", "power", false, true) { await model.send("PowerOff", label: "Power off") }
-            }
-            Text(model.message).foregroundStyle(.secondary).frame(minHeight: 22)
+            .foregroundStyle(.white)
+            .frame(maxWidth: .infinity, minHeight: title == nil ? 48 : 70)
+            .contentShape(Rectangle())
+            .background(tint.opacity(tint == .red ? 0.72 : 0.42), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.white.opacity(0.10), lineWidth: 1))
         }
-        .padding(26)
-        .frame(width: 500)
+        .buttonStyle(.plain)
     }
 }
 
@@ -459,9 +500,9 @@ struct RButton: View {
         Button { Task { await action() } } label: {
             VStack(spacing: 5) {
                 if let icon { Image(systemName: icon).font(.title3) }
-                if !title.isEmpty { Text(title).font(.caption.bold()) }
+                if !title.isEmpty { Text(title).font(.caption.bold()).lineLimit(1).minimumScaleFactor(0.75) }
             }
-            .frame(maxWidth: .infinity, minHeight: 54)
+            .frame(maxWidth: .infinity, minHeight: 62)
         }
         .buttonStyle(.borderedProminent)
         .tint(destructive ? .red : (emphasized ? .purple : .gray.opacity(0.55)))
